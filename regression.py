@@ -2,7 +2,8 @@ import pandas as pd
 import numpy as np
 from sklearn.model_selection import cross_val_score
 from sklearn.linear_model import LinearRegression, Ridge
-from sklearn.preprocessing import PolynomialFeatures
+from sklearn.pipeline import make_pipeline
+from sklearn.preprocessing import PolynomialFeatures, StandardScaler
 from math import sqrt
 import matplotlib.pyplot as plt
 
@@ -11,12 +12,16 @@ data = pd.read_csv('bloodpressure-23.csv')
 X = data[['SERUM-CHOL']]
 y = data['SYSTOLIC']
 
+# Cholesterol is ~200, so cholesterol^12 is ~1e27 and the fit falls apart
+# numerically. Scale it first, inside the pipeline so each CV fold is
+# scaled on its own training data only.
+def polynomial_model(degree):
+    return make_pipeline(StandardScaler(), PolynomialFeatures(degree=degree), LinearRegression())
+
 # Function to calculate RMSE
 def calculate_rmse(X, y, degree):
-    poly = PolynomialFeatures(degree=degree)
-    X_poly = poly.fit_transform(X)
-    model = LinearRegression()
-    scores = cross_val_score(model, X_poly, y, cv=10, scoring='neg_mean_squared_error')
+    model = polynomial_model(degree)
+    scores = cross_val_score(model, X, y, cv=10, scoring='neg_mean_squared_error')
     mse_values = -scores
     mean_mse = np.mean(mse_values)
     rmse = sqrt(mean_mse)
@@ -39,17 +44,17 @@ plt.xlabel('Polynomial Degree')
 plt.ylabel('Mean RMSE')
 plt.grid(True)
 plt.xticks(range(1, 15))
+plt.yscale('log')  # high degrees overfit by orders of magnitude
+plt.savefig('rmse_by_degree.png', dpi=120, bbox_inches='tight')
 plt.show()
 
 # Fit the best model
-poly = PolynomialFeatures(degree=best_degree)
-X_poly = poly.fit_transform(X)
-model = LinearRegression()
-model.fit(X_poly, y)
+model = polynomial_model(best_degree)
+model.fit(X, y)
 
-# Print the coefficients
-intercept = model.intercept_
-coefficients = model.coef_
+# Print the coefficients (on the scaled cholesterol)
+intercept = model[-1].intercept_
+coefficients = model[-1].coef_
 print(f"\nBest Degree: {best_degree}")
 print(f"Intercept: {intercept}")
 print("Coefficients:")
